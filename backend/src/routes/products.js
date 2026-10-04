@@ -18,6 +18,7 @@ const notifyRateLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 router.get('/', getProducts);

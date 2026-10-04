@@ -37,19 +37,23 @@ app.use(helmet({ crossOriginResourcePolicy: false }));  // Security headers
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,  // 15 min
-  max: 20,
+  max: 100,
   message: { success: false, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
 });
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 500,
   message: { success: false, message: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
 });
 
 const allowedOrigins = [
-  'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176',
+  'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:3000',
   'https://mason-n1y8.onrender.com',
   'https://mason-6c8l.onrender.com',
   'https://owlstitch.com', 'https://www.owlstitch.com',
@@ -78,16 +82,33 @@ if (process.env.ADMIN_URL) {
   });
 }
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.includes('owlstitch') || origin.includes('vercel.app') || (origin && origin.startsWith('http://localhost:'))) {
+    if (!origin) return callback(null, true);
+
+    const lowerOrigin = origin.toLowerCase();
+    const isAllowed =
+      allowedOrigins.includes(origin) ||
+      lowerOrigin.includes('owlstitch') ||
+      lowerOrigin.includes('vercel.app') ||
+      lowerOrigin.includes('onrender.com') ||
+      lowerOrigin.startsWith('http://localhost:') ||
+      lowerOrigin.startsWith('http://127.0.0.1:');
+
+    if (isAllowed) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false);
     }
   },
   credentials: true,
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Method', 'Access-Control-Request-Headers'],
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
