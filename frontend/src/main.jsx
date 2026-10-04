@@ -13,21 +13,31 @@ import { HelmetProvider } from 'react-helmet-async';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
+const renderApp = () => {
+  const content = (
+    <BrowserRouter>
+      <AuthProvider>
+        <WishlistProvider>
+          <CartProvider>
+            <App />
+            <Toaster position="bottom-right" />
+          </CartProvider>
+        </WishlistProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+
+  return GOOGLE_CLIENT_ID ? (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{content}</GoogleOAuthProvider>
+  ) : (
+    content
+  );
+};
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HelmetProvider>
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        <BrowserRouter>
-          <AuthProvider>
-            <WishlistProvider>
-              <CartProvider>
-                <App />
-                <Toaster position="bottom-right" />
-              </CartProvider>
-            </WishlistProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </GoogleOAuthProvider>
+      {renderApp()}
     </HelmetProvider>
   </React.StrictMode>,
 );

@@ -279,15 +279,19 @@ const Login = () => {
                 </button>
               </form>
 
-              <div style={{ margin: '1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-                <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>or</span>
-                <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-                <GoogleLogin onSuccess={handleGoogle} onError={() => {}}
-                  text="signin_with" shape="rectangular" theme="outline" size="large" width="280" />
-              </div>
+              {import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+                <>
+                  <div style={{ margin: '1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>or</span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
+                    <GoogleLogin onSuccess={handleGoogle} onError={() => {}}
+                      text="signin_with" shape="rectangular" theme="outline" size="large" width="280" />
+                  </div>
+                </>
+              )}
               <p className="auth-footer">
                 Don't have an account? <Link to="/register">Create an account</Link>
               </p>
