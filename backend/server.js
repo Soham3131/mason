@@ -56,6 +56,7 @@ const allowedOrigins = [
   'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:3000',
   'https://mason-n1y8.onrender.com',
   'https://mason-6c8l.onrender.com',
+  'https://mason-jo50.onrender.com',
   'https://owlstitch.com', 'https://www.owlstitch.com',
   'http://owlstitch.com', 'http://www.owlstitch.com',
   'https://owlstitch.in', 'https://www.owlstitch.in',

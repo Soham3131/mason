@@ -2,8 +2,16 @@ const isProd = import.meta.env.MODE === 'production';
 let apiUrl = import.meta.env.VITE_API_URL;
 
 if (isProd && apiUrl && (apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1'))) {
-  console.warn('VITE_API_URL points to localhost in production mode! Please configure your live Render backend URL on Vercel.');
+  apiUrl = 'https://mason-jo50.onrender.com/api/v1';
 }
 
-const VITE_API_URL = (apiUrl || (isProd ? 'https://mason-n1y8.onrender.com/api/v1' : 'http://localhost:5050/api/v1')).replace(/\/+$/, '');
+let resolvedUrl = (apiUrl || (isProd ? 'https://mason-jo50.onrender.com/api/v1' : 'http://localhost:5050/api/v1')).trim().replace(/\/+$/, '');
+
+// Automatically ensure /api/v1 suffix is present to prevent 404 errors
+if (!resolvedUrl.endsWith('/api/v1')) {
+  resolvedUrl = `${resolvedUrl}/api/v1`;
+}
+
+const VITE_API_URL = resolvedUrl;
 export default VITE_API_URL;
+
