@@ -43,40 +43,60 @@ import Sitemap from './pages/Sitemap';
 // Admin Components
 import { Suspense, lazy } from 'react';
 
-// Lazy load admin and vendor routes to prevent their CSS from leaking into the main app
-const AdminLayout = lazy(() => import('./components/AdminLayout'));
-const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
-const ProductsManagement = lazy(() => import('./pages/admin/ProductsManagement'));
-const ProductEdit = lazy(() => import('./pages/admin/ProductEdit'));
-const OrdersManagement = lazy(() => import('./pages/admin/OrdersManagement'));
-const CategoriesManagement = lazy(() => import('./pages/admin/CategoriesManagement'));
-const UsersManagement = lazy(() => import('./pages/admin/UsersManagement'));
-const UserDetail = lazy(() => import('./pages/admin/UserDetail'));
-const VendorsManagement = lazy(() => import('./pages/admin/VendorsManagement'));
-const VendorDetail = lazy(() => import('./pages/admin/VendorDetail'));
-const CouponsManagement = lazy(() => import('./pages/admin/CouponsManagement'));
-const CustomizationsManagement = lazy(() => import('./pages/admin/CustomizationsManagement'));
-const BrandsManagement = lazy(() => import('./pages/admin/BrandsManagement'));
-const ReturnsManagement = lazy(() => import('./pages/admin/ReturnsManagement'));
-const ReviewsManagement = lazy(() => import('./pages/admin/ReviewsManagement'));
-const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
-const VendorSettlements = lazy(() => import('./pages/admin/VendorSettlements'));
-const PlatformSettings = lazy(() => import('./pages/admin/PlatformSettings'));
-const HomeMediaManagement = lazy(() => import('./pages/admin/HomeMediaManagement'));
-const RestockAlerts = lazy(() => import('./pages/admin/RestockAlerts'));
-const QueriesManagement = lazy(() => import('./pages/admin/QueriesManagement'));
+// Resilient dynamic import that automatically refreshes the page once if a stale chunk fails after a new deployment
+const lazyWithRetry = (componentImport) =>
+  lazy(async () => {
+    try {
+      const component = await componentImport();
+      sessionStorage.removeItem('chunk_retry');
+      return component;
+    } catch (error) {
+      console.warn('[Chunk Load Error] Retrying with reload...', error);
+      const reloaded = sessionStorage.getItem('chunk_retry');
+      if (!reloaded) {
+        sessionStorage.setItem('chunk_retry', 'true');
+        window.location.reload();
+        return { default: () => null };
+      }
+      sessionStorage.removeItem('chunk_retry');
+      throw error;
+    }
+  });
 
-const VendorLayout = lazy(() => import('./components/VendorLayout'));
-const VendorDashboard = lazy(() => import('./pages/vendor/VendorDashboard'));
-const VendorPending = lazy(() => import('./pages/vendor/VendorPending'));
-const VendorSetPassword = lazy(() => import('./pages/vendor/VendorSetPassword'));
-const VendorProducts = lazy(() => import('./pages/vendor/VendorProducts'));
-const VendorProductForm = lazy(() => import('./pages/vendor/VendorProductForm'));
-const VendorInventory = lazy(() => import('./pages/vendor/VendorInventory'));
-const VendorOrders = lazy(() => import('./pages/vendor/VendorOrders'));
-const VendorOrderDetail = lazy(() => import('./pages/vendor/VendorOrderDetail'));
-const VendorEarnings = lazy(() => import('./pages/vendor/VendorEarnings'));
-const VendorProfile = lazy(() => import('./pages/vendor/VendorProfile'));
+// Lazy load admin and vendor routes to prevent their CSS from leaking into the main app
+const AdminLayout = lazyWithRetry(() => import('./components/AdminLayout'));
+const Dashboard = lazyWithRetry(() => import('./pages/admin/Dashboard'));
+const ProductsManagement = lazyWithRetry(() => import('./pages/admin/ProductsManagement'));
+const ProductEdit = lazyWithRetry(() => import('./pages/admin/ProductEdit'));
+const OrdersManagement = lazyWithRetry(() => import('./pages/admin/OrdersManagement'));
+const CategoriesManagement = lazyWithRetry(() => import('./pages/admin/CategoriesManagement'));
+const UsersManagement = lazyWithRetry(() => import('./pages/admin/UsersManagement'));
+const UserDetail = lazyWithRetry(() => import('./pages/admin/UserDetail'));
+const VendorsManagement = lazyWithRetry(() => import('./pages/admin/VendorsManagement'));
+const VendorDetail = lazyWithRetry(() => import('./pages/admin/VendorDetail'));
+const CouponsManagement = lazyWithRetry(() => import('./pages/admin/CouponsManagement'));
+const CustomizationsManagement = lazyWithRetry(() => import('./pages/admin/CustomizationsManagement'));
+const BrandsManagement = lazyWithRetry(() => import('./pages/admin/BrandsManagement'));
+const ReturnsManagement = lazyWithRetry(() => import('./pages/admin/ReturnsManagement'));
+const ReviewsManagement = lazyWithRetry(() => import('./pages/admin/ReviewsManagement'));
+const AdminAnalytics = lazyWithRetry(() => import('./pages/admin/AdminAnalytics'));
+const VendorSettlements = lazyWithRetry(() => import('./pages/admin/VendorSettlements'));
+const PlatformSettings = lazyWithRetry(() => import('./pages/admin/PlatformSettings'));
+const HomeMediaManagement = lazyWithRetry(() => import('./pages/admin/HomeMediaManagement'));
+const RestockAlerts = lazyWithRetry(() => import('./pages/admin/RestockAlerts'));
+const QueriesManagement = lazyWithRetry(() => import('./pages/admin/QueriesManagement'));
+
+const VendorLayout = lazyWithRetry(() => import('./components/VendorLayout'));
+const VendorDashboard = lazyWithRetry(() => import('./pages/vendor/VendorDashboard'));
+const VendorPending = lazyWithRetry(() => import('./pages/vendor/VendorPending'));
+const VendorSetPassword = lazyWithRetry(() => import('./pages/vendor/VendorSetPassword'));
+const VendorProducts = lazyWithRetry(() => import('./pages/vendor/VendorProducts'));
+const VendorProductForm = lazyWithRetry(() => import('./pages/vendor/VendorProductForm'));
+const VendorInventory = lazyWithRetry(() => import('./pages/vendor/VendorInventory'));
+const VendorOrders = lazyWithRetry(() => import('./pages/vendor/VendorOrders'));
+const VendorOrderDetail = lazyWithRetry(() => import('./pages/vendor/VendorOrderDetail'));
+const VendorEarnings = lazyWithRetry(() => import('./pages/vendor/VendorEarnings'));
+const VendorProfile = lazyWithRetry(() => import('./pages/vendor/VendorProfile'));
 
 // Contexts
 import { CartProvider } from './context/CartContext';
