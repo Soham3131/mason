@@ -9,13 +9,16 @@ const protect = asyncHandler(async (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = await User.findById(decoded.id).select('-password');
+      if (!req.user) {
+        res.status(401);
+        throw new Error('User no longer exists, please log in again');
+      }
       next();
     } catch (error) {
       res.status(401);
-      throw new Error('Not authorized, token failed');
+      throw new Error(error.message || 'Not authorized, token failed');
     }
-  }
-  if (!token) {
+  } else {
     res.status(401);
     throw new Error('Not authorized, no token');
   }

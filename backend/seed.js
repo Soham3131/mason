@@ -268,4 +268,8 @@ const seed = async () => {
   }
 };
 
-seed();
+if (require.main === module) {
+  seed();
+}
+
+module.exports = { categories, products };
