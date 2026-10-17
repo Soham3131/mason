@@ -60,13 +60,14 @@ const allowedOrigins = [
   'http://owlstitch.com', 'http://www.owlstitch.com',
   'https://owlstitch.in', 'https://www.owlstitch.in',
   'http://owlstitch.in', 'http://www.owlstitch.in',
+  'https://mason-murex.vercel.app',
   'https://mason-jade.vercel.app',
   'https://mason-iota-orcin.vercel.app'
 ];
 
 if (process.env.FRONTEND_URL) {
   process.env.FRONTEND_URL.split(',').forEach(url => {
-    const trimmed = url.trim();
+    const trimmed = url.trim().replace(/\/+$/, '');
     if (trimmed && !allowedOrigins.includes(trimmed)) {
       allowedOrigins.push(trimmed);
     }
@@ -75,7 +76,7 @@ if (process.env.FRONTEND_URL) {
 
 if (process.env.ADMIN_URL) {
   process.env.ADMIN_URL.split(',').forEach(url => {
-    const trimmed = url.trim();
+    const trimmed = url.trim().replace(/\/+$/, '');
     if (trimmed && !allowedOrigins.includes(trimmed)) {
       allowedOrigins.push(trimmed);
     }
@@ -86,8 +87,10 @@ const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
 
-    const lowerOrigin = origin.toLowerCase();
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    const lowerOrigin = cleanOrigin.toLowerCase();
     const isAllowed =
+      allowedOrigins.includes(cleanOrigin) ||
       allowedOrigins.includes(origin) ||
       lowerOrigin.includes('owlstitch') ||
       lowerOrigin.includes('vercel.app') ||

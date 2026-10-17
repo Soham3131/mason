@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import API_URL from '../../utils/config';
 import './CustomizationsManagement.css'; 
 
 const CustomizationsManagement = () => {
@@ -13,7 +14,7 @@ const CustomizationsManagement = () => {
 
   const fetchRequests = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/customizations`, {
+      const res = await fetch(`${API_URL}/customizations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -39,7 +40,7 @@ const CustomizationsManagement = () => {
       if (priceQuote !== undefined) payload.priceQuote = priceQuote;
       if (paymentStatus !== undefined) payload.paymentStatus = paymentStatus;
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/customizations/${id}/status`, {
+      const res = await fetch(`${API_URL}/customizations/${id}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
