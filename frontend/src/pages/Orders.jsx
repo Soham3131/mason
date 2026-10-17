@@ -449,12 +449,16 @@ const Orders = () => {
                                   )}
                                 </div>
                               )}
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '8px', flexWrap: 'wrap' }}>
-                                {(order.status === 'delivered' || order.status === 'return_requested') && (!item.returnStatus || item.returnStatus === 'none') && (
-                                  <button className="btn-review-inline" style={{ color: '#dc2626', borderColor: '#fee2e2' }} onClick={() => openReturnModal(order._id, item)}>
-                                    ↩ Return Item
-                                  </button>
-                                )}
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '8px', flexWrap: 'wrap' }}>
+                                  {(order.status === 'delivered' || order.status === 'return_requested') && (!item.returnStatus || item.returnStatus === 'none') && (
+                                    <button
+                                      className="btn-review-inline"
+                                      style={{ color: '#b91c1c', borderColor: '#fca5a5', background: '#fef2f2', fontWeight: 600 }}
+                                      onClick={() => openReturnModal(order._id, item)}
+                                    >
+                                      ↩ Return Item
+                                    </button>
+                                  )}
                                 {order.status === 'delivered' && (
                                   <button className="btn-review-inline" onClick={() => openReviewModal(item)}>
                                     <Star size={12} /> Write a Review
@@ -482,7 +486,13 @@ const Orders = () => {
                               <div className="node-content">
                                 <div className="node-label" style={{ color: hInfo.color }}>{hInfo.label}</div>
                                 <div className="node-time">
-                                  {new Date(h.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  {(() => {
+                                    const raw = h.timestamp || h.updatedAt || h.createdAt || order.createdAt;
+                                    const d = new Date(raw);
+                                    return !isNaN(d.getTime())
+                                      ? d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                      : new Date(order.createdAt || Date.now()).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                                  })()}
                                 </div>
                                 {h.note && <div className="node-note">{h.note}</div>}
                               </div>
@@ -582,6 +592,25 @@ const Orders = () => {
 
                     {['pending', 'confirmed', 'processing'].includes(order.status) && (
                       <button className="btn-action-v2 danger" onClick={() => { setCancelOrderId(order._id); setCancelModalOpen(true); }}>Cancel Order</button>
+                    )}
+
+                    {/* Request Return button — shown when delivered */}
+                    {(order.status === 'delivered' || order.status === 'return_requested') && order.items?.some(i => !i.returnStatus || i.returnStatus === 'none') && (
+                      <button
+                        className="btn-action-v2"
+                        style={{ borderColor: '#fed7aa', color: '#c2410c', background: '#fff7ed', fontWeight: 600 }}
+                        onClick={() => {
+                          const returnableItem = order.items.find(i => !i.returnStatus || i.returnStatus === 'none');
+                          if (order.items.length === 1 && returnableItem) {
+                            openReturnModal(order._id, returnableItem);
+                          } else {
+                            setExpandedOrderId(order._id);
+                            toast.info('Please select which item you want to return below');
+                          }
+                        }}
+                      >
+                        ↩ Request Return
+                      </button>
                     )}
                   </div>
 

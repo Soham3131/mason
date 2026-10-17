@@ -101,24 +101,36 @@ const verifyPayment = asyncHandler(async (req, res) => {
     link: `/orders/${order._id}`,
   });
 
-  const populatedUser = await User.findById(order.user);
-  if (populatedUser) {
-    sendOrderConfirmation({
-      name: populatedUser.name,
-      email: populatedUser.email,
-      orderNumber: order.orderNumber,
-      totalAmount: order.totalAmount,
-      items: order.items
-    }).catch(err => console.error('[Email sendOrderConfirmation]', err.message));
+  try {
+    const populatedUser = await User.findById(order.user).select('name email');
+    const customerEmail = populatedUser?.email || order.shippingAddress?.email;
+    const customerName = populatedUser?.name || order.shippingAddress?.fullName || 'Customer';
 
-    sendAdminNewOrder({
-      orderNumber: order.orderNumber,
-      customerName: populatedUser.name,
-      customerEmail: populatedUser.email,
-      totalAmount: order.totalAmount,
-      paymentMethod: order.paymentMethod || 'Razorpay',
-      items: order.items
-    }).catch(err => console.error('[Email sendAdminNewOrder]', err.message));
+    const payTasks = [];
+    if (customerEmail) {
+      payTasks.push(
+        sendOrderConfirmation({
+          name: customerName,
+          email: customerEmail,
+          orderNumber: order.orderNumber,
+          totalAmount: order.totalAmount,
+          items: order.items
+        })
+      );
+    }
+    payTasks.push(
+      sendAdminNewOrder({
+        orderNumber: order.orderNumber,
+        customerName,
+        customerEmail,
+        totalAmount: order.totalAmount,
+        paymentMethod: order.paymentMethod || 'Razorpay',
+        items: order.items
+      })
+    );
+    await Promise.allSettled(payTasks);
+  } catch (payMailErr) {
+    console.error('[Payment Email Error]', payMailErr.message);
   }
 
   res.json({ success: true, order });

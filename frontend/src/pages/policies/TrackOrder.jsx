@@ -107,7 +107,11 @@ const TrackOrder = () => {
                         <p style={{ margin: 0, fontWeight: 600, textTransform: 'capitalize', color: 'var(--color-text)' }}>{history.status}</p>
                         <p style={{ margin: '0.25rem 0', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{history.note || 'Status updated'}</p>
                         <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
-                          {new Date(history.timestamp).toLocaleString('en-IN')}
+                          {(() => {
+                            const raw = history.timestamp || history.updatedAt || history.createdAt || orderData.createdAt;
+                            const d = new Date(raw);
+                            return !isNaN(d.getTime()) ? d.toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+                          })()}
                         </p>
                       </div>
                     ))}

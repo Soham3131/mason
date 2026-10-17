@@ -9,16 +9,17 @@ const adminTo = () =>
     .join(', ');
 
 const createTransporter = () => {
+  const host = (process.env.SMTP_HOST || 'smtp.hostinger.com').trim();
   const port = Number(process.env.SMTP_PORT) || 465;
   const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-    port: port,
+    host,
+    port,
     secure: isSecure,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: (process.env.SMTP_USER || '').trim(),
+      pass: (process.env.SMTP_PASS || '').trim(),
     },
     tls: {
       rejectUnauthorized: false,
@@ -32,13 +33,15 @@ const createTransporter = () => {
 
 /* ── Generic send ──────────────────────────────────── */
 const sendEmail = async ({ to, subject, html }) => {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  if (!smtpUser || !smtpPass) {
     console.warn('[Email] SMTP_USER or SMTP_PASS not set in environment — skipping email send');
     return;
   }
   try {
     const transporter = createTransporter();
-    const fromAddress = process.env.SMTP_USER.trim();
+    const fromAddress = (process.env.SMTP_FROM || smtpUser).trim();
     await transporter.sendMail({
       from: `"Owl Stitch by Mason" <${fromAddress}>`,
       to,
@@ -243,14 +246,31 @@ const sendOrderOutForDelivery = async ({ name, email, orderNumber }) => {
   });
 };
 
-/* ── Order Delivered ───────────────────────────────── */
+/* ── Order Delivered (Customer) ────────────────────── */
 const sendOrderDelivered = async ({ name, email, orderNumber }) => {
   await sendEmail({
     to: email,
-    subject: `Your Mason Order #${orderNumber} has been Delivered! 🎉`,
+    subject: `Your Owl Stitch Order #${orderNumber} has been Delivered! 🎉`,
     html: wrap(`
-      <h2 style="color:#0f172a;margin:0 0 8px;">Order Delivered</h2>
-      <p style="color:#6b7280;line-height:1.6;">Hi ${name}, we are delighted to let you know that your order <strong>#${orderNumber}</strong> has been delivered. We hope you love it!</p>`),
+      <h2 style="color:#0f172a;margin:0 0 8px;">Order Delivered 🎉</h2>
+      <p style="color:#374151;line-height:1.6;margin:0 0 16px;">Hi ${name || 'Customer'}, we are delighted to let you know that your order <strong>#${orderNumber}</strong> has been delivered. We hope you love your purchase!</p>
+      <p style="margin:16px 0 0;font-size:0.82rem;color:#9ca3af;">If you have any questions or need to return an item, you can do so within 7 days from your account.</p>`),
+  });
+};
+
+/* ── Order Delivered (Admin Alert) ─────────────────── */
+const sendAdminOrderDelivered = async ({ orderNumber, customerName, customerEmail, totalAmount }) => {
+  await sendEmail({
+    to: adminTo(),
+    subject: `🎉 Order Delivered — #${orderNumber}`,
+    html: adminWrap(`
+      <p style="margin:0 0 18px;font-size:1rem;color:#16a34a;font-weight:700;">Order #${orderNumber} Delivered Successfully</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row('Order #', orderNumber)}
+        ${row('Customer', `${customerName || 'Customer'} &lt;${customerEmail || '—'}&gt;`)}
+        ${row('Total', `₹${Number(totalAmount || 0).toLocaleString('en-IN')}`)}
+        ${row('Status', 'Delivered')}
+      </table>`),
   });
 };
 
@@ -392,6 +412,7 @@ module.exports = {
   sendOrderShipped,
   sendOrderOutForDelivery,
   sendOrderDelivered,
+  sendAdminOrderDelivered,
   sendOrderCancelled,
   sendAdminOrderCancelled,
   sendReturnRequest,

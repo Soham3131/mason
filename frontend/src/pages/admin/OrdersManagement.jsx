@@ -15,6 +15,9 @@ const ALL_ADMIN_STATUSES = [
   { value: 'shipped',          label: 'Shipped' },
   { value: 'out_for_delivery',  label: 'Out for Delivery' },
   { value: 'delivered',        label: 'Delivered' },
+  { value: 'return_requested',  label: 'Return Requested' },
+  { value: 'returned',         label: 'Returned' },
+  { value: 'return_rejected',   label: 'Return Rejected' },
   { value: 'cancelled',        label: 'Cancelled' },
   { value: 'refunded',         label: 'Refunded' },
 ];
@@ -59,6 +62,7 @@ const FILTER_TABS = [
   { label: 'Cancelled',      value: 'cancelled' },
   { label: 'Cancel Req.',    value: 'cancel_requested' },
   { label: 'Return Req.',    value: 'return_requested' },
+  { label: 'Returned',       value: 'returned' },
 ];
 
 const MONTHS = [
@@ -438,13 +442,25 @@ const OrdersManagement = () => {
   const updateStatus = async (orderId, currentStatus, newStatus) => {
     if (newStatus === currentStatus) return;
 
-    // Instant optimistic update so admin sees immediate UI feedback
+    const noteText = `Status updated to ${STATUS_LABELS[newStatus] || newStatus} by admin`;
+    const nowIso = new Date().toISOString();
+
+    // Instant optimistic update so admin sees immediate UI feedback with valid timestamp
     setOrders(prev =>
       prev.map(o => {
         if (o._id !== orderId) return o;
+        const newHistory = [
+          ...(o.statusHistory || []),
+          {
+            status: newStatus,
+            note: noteText,
+            timestamp: nowIso,
+          }
+        ];
         return {
           ...o,
           status: newStatus,
+          statusHistory: newHistory,
           paymentStatus: newStatus === 'delivered' ? 'paid' : (newStatus === 'refunded' ? 'refunded' : o.paymentStatus),
         };
       })
@@ -453,7 +469,7 @@ const OrdersManagement = () => {
     try {
       await api.put(`/orders/${orderId}/status`, {
         status: newStatus,
-        note: `Status updated to ${STATUS_LABELS[newStatus] || newStatus} by admin`,
+        note: noteText,
       });
       toast.success(`Order updated to ${STATUS_LABELS[newStatus] || newStatus}`);
       fetchOrders();
@@ -792,32 +808,32 @@ const OrdersManagement = () => {
                           </button>
 
                           {/* 3. Status Action / Dropdown */}
-                          {order.status === 'cancel_requested' ? (
+                          {order.status === 'cancel_requested' && (
                             <button
                               onClick={() => setCancelModal(order)}
                               style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.75rem', height:'32px', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink: 0 }}
                             >
                               Cancel Req.
                             </button>
-                          ) : order.status === 'return_requested' ? (
+                          )}
+                          {order.status === 'return_requested' && (
                             <button
                               onClick={() => setExpandedId(isExpanded ? null : order._id)}
-                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.75rem', height:'32px', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink: 0 }}
+                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.75rem', height:'32px', background:'#ea580c', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink: 0 }}
                             >
                               Return Req.
                             </button>
-                          ) : (
-                            <select
-                              className="status-select"
-                              value={order.status}
-                              onChange={e => updateStatus(order._id, order.status, e.target.value)}
-                              style={{ height: '32px', fontSize: '0.76rem', fontWeight: 600, padding: '0 1.5rem 0 0.55rem', minWidth: '105px' }}
-                            >
-                              {ALL_ADMIN_STATUSES.map(s => (
-                                <option key={s.value} value={s.value}>{s.label}</option>
-                              ))}
-                            </select>
                           )}
+                          <select
+                            className="status-select"
+                            value={order.status}
+                            onChange={e => updateStatus(order._id, order.status, e.target.value)}
+                            style={{ height: '32px', fontSize: '0.76rem', fontWeight: 600, padding: '0 1.5rem 0 0.55rem', minWidth: '105px' }}
+                          >
+                            {ALL_ADMIN_STATUSES.map(s => (
+                              <option key={s.value} value={s.value}>{s.label}</option>
+                            ))}
+                          </select>
                         </div>
                       </td>
                     </tr>,
@@ -846,6 +862,16 @@ const OrdersManagement = () => {
                                       </div>
                                       <div className="order-item-price">₹{item.price}</div>
                                     </div>
+                                    {rStatus === 'none' && (
+                                      <div style={{ marginTop: '0.5rem' }}>
+                                        <button
+                                          onClick={() => handleItemReturn(order._id, item._id, 'approve')}
+                                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.8rem', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: '6px', fontSize: '0.73rem', fontWeight: 650, cursor: 'pointer' }}
+                                        >
+                                          ↩ Process Return & Refund
+                                        </button>
+                                      </div>
+                                    )}
                                     {rStatus !== 'none' && (
                                       <div style={{ marginTop:'0.625rem' }}>
                                         <span className={`status-badge ${returnBadgeClass[rStatus] || 'badge-pending'}`} style={{ fontSize:'0.7rem' }}>
@@ -1045,18 +1071,25 @@ const OrdersManagement = () => {
                                 <div>
                                   <p className="order-detail-section-title">Timeline</p>
                                   <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                                    {order.statusHistory.slice().reverse().map((h, i) => (
-                                      <div key={i} style={{ display:'flex', gap:'0.625rem', alignItems:'flex-start' }}>
-                                        <div style={{ width:8, height:8, borderRadius:'50%', background:'#C08A74', marginTop:4, flexShrink:0 }} />
-                                        <div>
-                                          <div style={{ fontSize:'0.78rem', fontWeight:600, color:'#374151', textTransform:'capitalize' }}>{h.status}</div>
-                                          {h.note && <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>{h.note}</div>}
-                                          <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>
-                                            {new Date(h.updatedAt).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                                    {order.statusHistory.slice().reverse().map((h, i) => {
+                                      const rawDate = h.timestamp || h.updatedAt || h.createdAt || order.createdAt;
+                                      const d = new Date(rawDate);
+                                      const formattedDate = !isNaN(d.getTime())
+                                        ? d.toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
+                                        : new Date(order.createdAt || Date.now()).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+                                      return (
+                                        <div key={i} style={{ display:'flex', gap:'0.625rem', alignItems:'flex-start' }}>
+                                          <div style={{ width:8, height:8, borderRadius:'50%', background:'#C08A74', marginTop:4, flexShrink:0 }} />
+                                          <div>
+                                            <div style={{ fontSize:'0.78rem', fontWeight:600, color:'#374151', textTransform:'capitalize' }}>{h.status}</div>
+                                            {h.note && <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>{h.note}</div>}
+                                            <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>
+                                              {formattedDate}
+                                            </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}

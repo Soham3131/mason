@@ -7,7 +7,7 @@ const User = require('../models/User');
 const { createNotification } = require('../utils/notificationHelper');
 const {
   sendOrderConfirmation, sendOrderShipped, sendOrderOutForDelivery, sendOrderDelivered,
-  sendOrderCancelled, sendAdminOrderCancelled,
+  sendAdminOrderDelivered, sendOrderCancelled, sendAdminOrderCancelled,
   sendReturnRequest, sendReturnApproved, sendRefundProcessed,
   sendAdminNewOrder, sendAdminReturnRequest, sendAdminCancellationRequest,
 } = require('../utils/emailService');
@@ -219,24 +219,39 @@ const createOrder = asyncHandler(async (req, res) => {
   );
 
   // Send customer confirmation + admin new-order alert for every order
-  const populatedUser = await User.findById(req.user._id);
-  if (populatedUser) {
-    sendOrderConfirmation({
-      name: populatedUser.name,
-      email: populatedUser.email,
-      orderNumber: order.orderNumber,
-      totalAmount: order.totalAmount,
-      items: itemsWithVendor,
-    }).catch(() => {});
+  try {
+    const populatedUser = await User.findById(req.user._id).select('name email');
+    const customerEmail = populatedUser?.email || order.shippingAddress?.email;
+    const customerName = populatedUser?.name || order.shippingAddress?.fullName || 'Customer';
 
-    sendAdminNewOrder({
-      orderNumber: order.orderNumber,
-      customerName: populatedUser.name,
-      customerEmail: populatedUser.email,
-      totalAmount: order.totalAmount,
-      paymentMethod,
-      items: itemsWithVendor,
-    }).catch(() => {});
+    const orderEmailTasks = [];
+    if (customerEmail) {
+      orderEmailTasks.push(
+        sendOrderConfirmation({
+          name: customerName,
+          email: customerEmail,
+          orderNumber: order.orderNumber,
+          totalAmount: order.totalAmount,
+          items: itemsWithVendor,
+        })
+      );
+    }
+    orderEmailTasks.push(
+      sendAdminNewOrder({
+        orderNumber: order.orderNumber,
+        customerName,
+        customerEmail,
+        totalAmount: order.totalAmount,
+        paymentMethod,
+        items: itemsWithVendor,
+      })
+    );
+
+    if (orderEmailTasks.length > 0) {
+      await Promise.allSettled(orderEmailTasks);
+    }
+  } catch (err) {
+    console.error('[Order Placement Email Error]', err.message);
   }
 
   res.status(201).json({ success: true, order });
@@ -302,7 +317,8 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   order.status = status;
   order.statusHistory.push({
     status,
-    note: note || `Status changed from ${prevStatus} to ${status}`
+    note: note || `Status changed from ${prevStatus} to ${status}`,
+    timestamp: new Date(),
   });
 
   // If marked delivered, COD / unpaid orders become paid
@@ -315,9 +331,19 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     order.paymentStatus = 'refunded';
   }
 
+  // If marked returned, update item statuses
+  if (status === 'returned') {
+    order.items.forEach(item => {
+      if (!item.returnStatus || item.returnStatus === 'none' || item.returnStatus === 'requested') {
+        item.returnStatus = 'approved';
+        item.returnAdminNote = note || 'Return processed by admin';
+      }
+    });
+  }
+
   // Stock inventory adjustments:
-  const isNowCancelledOrRefunded = ['cancelled', 'refunded'].includes(status);
-  const wasCancelledOrRefunded = ['cancelled', 'refunded'].includes(prevStatus);
+  const isNowCancelledOrRefunded = ['cancelled', 'refunded', 'returned'].includes(status);
+  const wasCancelledOrRefunded = ['cancelled', 'refunded', 'returned'].includes(prevStatus);
 
   if (isNowCancelledOrRefunded && !wasCancelledOrRefunded) {
     // Restore stock
@@ -351,63 +377,114 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     link: `/orders/${order._id}`
   }).catch(() => {});
 
-  // Send Email notifications
-  const populatedUser = await User.findById(order.user);
-  if (populatedUser) {
+  // Send Email notifications (awaited so SMTP transport completes before response)
+  try {
+    const populatedUser = await User.findById(order.user).select('name email');
+    const customerEmail = populatedUser?.email || order.shippingAddress?.email;
+    const customerName = populatedUser?.name || order.shippingAddress?.fullName || 'Customer';
+
+    console.log(`[Order Status Update] Sending emails for order #${order.orderNumber} (status: ${status}) to: ${customerEmail}`);
+
+    const emailTasks = [];
+
     if (status === 'confirmed') {
-      sendOrderConfirmation({
-        name: populatedUser.name,
-        email: populatedUser.email,
-        orderNumber: order.orderNumber,
-        totalAmount: order.totalAmount,
-        items: order.items,
-      }).catch(err => console.error('[Email Error sendOrderConfirmation]', err.message));
-
-      sendAdminNewOrder({
-        orderNumber: order.orderNumber,
-        customerName: populatedUser.name,
-        customerEmail: populatedUser.email,
-        totalAmount: order.totalAmount,
-        paymentMethod: order.paymentMethod,
-        items: order.items,
-      }).catch(err => console.error('[Email Error sendAdminNewOrder]', err.message));
-    } else if (status === 'shipped') {
-      sendOrderShipped({
-        name: populatedUser.name,
-        email: populatedUser.email,
-        orderNumber: order.orderNumber,
-        trackingUrl: order.trackingUrl
-      }).catch(err => console.error('[Email Error sendOrderShipped]', err.message));
-    } else if (status === 'out_for_delivery') {
-      sendOrderOutForDelivery({
-        name: populatedUser.name,
-        email: populatedUser.email,
-        orderNumber: order.orderNumber
-      }).catch(err => console.error('[Email Error sendOrderOutForDelivery]', err.message));
+      if (customerEmail) {
+        emailTasks.push(
+          sendOrderConfirmation({
+            name: customerName,
+            email: customerEmail,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount,
+            items: order.items,
+          })
+        );
+      }
+      emailTasks.push(
+        sendAdminNewOrder({
+          orderNumber: order.orderNumber,
+          customerName,
+          customerEmail,
+          totalAmount: order.totalAmount,
+          paymentMethod: order.paymentMethod,
+          items: order.items,
+        })
+      );
+    } else if (status === 'shipped' && customerEmail) {
+      emailTasks.push(
+        sendOrderShipped({
+          name: customerName,
+          email: customerEmail,
+          orderNumber: order.orderNumber,
+          trackingUrl: order.trackingUrl
+        })
+      );
+    } else if (status === 'out_for_delivery' && customerEmail) {
+      emailTasks.push(
+        sendOrderOutForDelivery({
+          name: customerName,
+          email: customerEmail,
+          orderNumber: order.orderNumber
+        })
+      );
     } else if (status === 'delivered') {
-      sendOrderDelivered({
-        name: populatedUser.name,
-        email: populatedUser.email,
-        orderNumber: order.orderNumber
-      }).catch(err => console.error('[Email Error sendOrderDelivered]', err.message));
+      if (customerEmail) {
+        emailTasks.push(
+          sendOrderDelivered({
+            name: customerName,
+            email: customerEmail,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount
+          })
+        );
+      }
+      emailTasks.push(
+        sendAdminOrderDelivered({
+          orderNumber: order.orderNumber,
+          customerName,
+          customerEmail,
+          totalAmount: order.totalAmount
+        })
+      );
     } else if (status === 'cancelled') {
-      sendOrderCancelled({
-        name: populatedUser.name,
-        email: populatedUser.email,
-        orderNumber: order.orderNumber,
-        reason: note || 'Cancelled by store admin',
-        totalAmount: order.totalAmount,
-        refundNotice: order.paymentStatus === 'paid' ? 'If you have paid for this order, your refund is being processed.' : ''
-      }).catch(err => console.error('[Email Error sendOrderCancelled]', err.message));
-
-      sendAdminOrderCancelled({
-        orderNumber: order.orderNumber,
-        customerName: populatedUser.name,
-        customerEmail: populatedUser.email,
-        totalAmount: order.totalAmount,
-        reason: note || 'Cancelled by admin'
-      }).catch(err => console.error('[Email Error sendAdminOrderCancelled]', err.message));
+      if (customerEmail) {
+        emailTasks.push(
+          sendOrderCancelled({
+            name: customerName,
+            email: customerEmail,
+            orderNumber: order.orderNumber,
+            reason: note || 'Cancelled by store admin',
+            totalAmount: order.totalAmount,
+            refundNotice: order.paymentStatus === 'paid' ? 'If you have paid for this order, your refund is being processed.' : ''
+          })
+        );
+      }
+      emailTasks.push(
+        sendAdminOrderCancelled({
+          orderNumber: order.orderNumber,
+          customerName,
+          customerEmail,
+          totalAmount: order.totalAmount,
+          reason: note || 'Cancelled by admin'
+        })
+      );
+    } else if (status === 'returned' || status === 'refunded') {
+      if (customerEmail) {
+        emailTasks.push(
+          sendRefundProcessed({
+            name: customerName,
+            email: customerEmail,
+            orderNumber: order.orderNumber,
+            amount: order.totalAmount,
+          })
+        );
+      }
     }
+
+    if (emailTasks.length > 0) {
+      await Promise.allSettled(emailTasks);
+    }
+  } catch (emailErr) {
+    console.error('[Order Status Email Error]', emailErr.message);
   }
 
   res.json({ success: true, order });
@@ -596,8 +673,11 @@ const handleItemReturn = asyncHandler(async (req, res) => {
   const item = order.items.id(itemId);
   if (!item) { res.status(404); throw new Error('Item not found in this order'); }
 
-  if (item.returnStatus !== 'requested') {
-    res.status(400); throw new Error('This item does not have a pending return request');
+  if (item.returnStatus === 'approved') {
+    res.status(400); throw new Error('This item return has already been approved');
+  }
+  if (action === 'reject' && item.returnStatus !== 'requested') {
+    res.status(400); throw new Error('Only requested items can be rejected');
   }
 
   if (action === 'approve') {
@@ -674,10 +754,18 @@ const handleItemReturn = asyncHandler(async (req, res) => {
   });
 
   // Send Email
-  const populatedUser = await User.findById(order.user);
-  if (populatedUser && action === 'approve') {
-    await sendReturnApproved({ name: populatedUser.name, email: populatedUser.email, orderNumber: order.orderNumber, itemName: item.name, refundAmount: item.refundAmount });
-    await sendRefundProcessed({ name: populatedUser.name, email: populatedUser.email, orderNumber: order.orderNumber, amount: item.refundAmount });
+  try {
+    const populatedUser = await User.findById(order.user).select('name email');
+    const customerEmail = populatedUser?.email || order.shippingAddress?.email;
+    const customerName = populatedUser?.name || order.shippingAddress?.fullName || 'Customer';
+    if (customerEmail && action === 'approve') {
+      await Promise.allSettled([
+        sendReturnApproved({ name: customerName, email: customerEmail, orderNumber: order.orderNumber, itemName: item.name, refundAmount: item.refundAmount }),
+        sendRefundProcessed({ name: customerName, email: customerEmail, orderNumber: order.orderNumber, amount: item.refundAmount })
+      ]);
+    }
+  } catch (mailErr) {
+    console.error('[Item Return Email Error]', mailErr.message);
   }
 
   res.json({ success: true, order });
@@ -794,24 +882,36 @@ const handleCancellationRequest = asyncHandler(async (req, res) => {
   }).catch(() => {});
 
   if (isApproved) {
-    const cancelUser = await User.findById(order.user).select('name email');
-    if (cancelUser) {
-      sendOrderCancelled({
-        name: cancelUser.name,
-        email: cancelUser.email,
-        orderNumber: order.orderNumber,
-        reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin',
-        totalAmount: order.totalAmount,
-        refundNotice: order.paymentStatus === 'refunded' ? `A refund of ₹${order.totalAmount} has been initiated.` : ''
-      }).catch(err => console.error('[Email sendOrderCancelled]', err.message));
+    try {
+      const cancelUser = await User.findById(order.user).select('name email');
+      const customerEmail = cancelUser?.email || order.shippingAddress?.email;
+      const customerName = cancelUser?.name || order.shippingAddress?.fullName || 'Customer';
 
-      sendAdminOrderCancelled({
-        orderNumber: order.orderNumber,
-        customerName: cancelUser.name,
-        customerEmail: cancelUser.email,
-        totalAmount: order.totalAmount,
-        reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin'
-      }).catch(err => console.error('[Email sendAdminOrderCancelled]', err.message));
+      const cancelTasks = [];
+      if (customerEmail) {
+        cancelTasks.push(
+          sendOrderCancelled({
+            name: customerName,
+            email: customerEmail,
+            orderNumber: order.orderNumber,
+            reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin',
+            totalAmount: order.totalAmount,
+            refundNotice: order.paymentStatus === 'refunded' ? `A refund of ₹${order.totalAmount} has been initiated.` : ''
+          })
+        );
+      }
+      cancelTasks.push(
+        sendAdminOrderCancelled({
+          orderNumber: order.orderNumber,
+          customerName,
+          customerEmail,
+          totalAmount: order.totalAmount,
+          reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin'
+        })
+      );
+      await Promise.allSettled(cancelTasks);
+    } catch (cancelErr) {
+      console.error('[Cancellation Email Error]', cancelErr.message);
     }
   }
 
