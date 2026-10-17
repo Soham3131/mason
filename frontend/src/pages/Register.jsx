@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { GoogleLogin } from '@react-oauth/google';
+import { Eye, EyeOff } from 'lucide-react';
 import './Auth.css';
 
 const Register = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { register, googleLogin, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -66,15 +67,25 @@ const Register = () => {
             </div>
             <div className="form-group">
               <label className="form-label">Password</label>
-              <input 
-                type="password" 
-                className="auth-input" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)}
-                required 
-                placeholder="Create a password (min 6 chars)"
-                minLength={6}
-              />
+              <div className="password-input-wrapper">
+                <input 
+                  type={showPassword ? 'text' : 'password'} 
+                  className="auth-input" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)}
+                  required 
+                  placeholder="Create a password (min 6 chars)"
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             
             <button type="submit" className="auth-btn" disabled={loading}>
@@ -82,26 +93,7 @@ const Register = () => {
             </button>
           </form>
 
-          {import.meta.env.VITE_GOOGLE_CLIENT_ID && (
-            <>
-              <div style={{ margin: '1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-                <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>or</span>
-                <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-                <GoogleLogin
-                  onSuccess={handleGoogle}
-                  onError={() => {}}
-                  text="signup_with"
-                  shape="rectangular"
-                  theme="outline"
-                  size="large"
-                  width="280"
-                />
-              </div>
-            </>
-          )}
+          {/* Google Sign Up hidden for now per user request */}
 
           <p className="auth-footer">
             Already a member? <Link to="/login">Sign In</Link>

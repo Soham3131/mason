@@ -8,9 +8,9 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const User = require('../src/models/User');
 
-const ADMIN_EMAIL    = 'admin@clothingweb.com';
-const ADMIN_PASSWORD = 'Admin@1234';
-const ADMIN_CODE     = '31082005';
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'admin@clothingweb.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@1234';
+const ADMIN_CODE     = process.env.ADMIN_ACCESS_CODE || '31082005';
 
 (async () => {
   await mongoose.connect(process.env.MONGO_URI);

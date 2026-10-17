@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { GoogleLogin } from '@react-oauth/google';
-import { Shield } from 'lucide-react';
+import { Shield, Eye, EyeOff } from 'lucide-react';
 import api from '../utils/api';
 import './Auth.css';
 
@@ -17,14 +16,18 @@ const Login = () => {
 
   const [email, setEmail]               = useState('');
   const [password, setPassword]         = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [accessCode, setAccessCode]     = useState('');
+  const [showAccessCode, setShowAccessCode] = useState(false);
   const [role, setRole]                 = useState(null);
 
   // Forgot password state
   const [forgotEmail, setForgotEmail]   = useState('');
   const [otp, setOtp]                   = useState('');
   const [newPassword, setNewPassword]   = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [error, setError]               = useState('');
   const [successMsg, setSuccessMsg]     = useState('');
@@ -249,28 +252,48 @@ const Login = () => {
                       Forgot Password?
                     </button>
                   </div>
-                  <input
-                    type="password"
-                    className="auth-input"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    placeholder="Enter your password"
-                  />
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className="auth-input"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      required
+                      placeholder="Enter your password"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Conditional Access Code */}
                 {(role === 'admin' || role === 'vendor') && (
                   <div className="form-group">
                     <label className="form-label">Access Code (Required)</label>
-                    <input
-                      type="password"
-                      className="auth-input"
-                      value={accessCode}
-                      onChange={e => setAccessCode(e.target.value)}
-                      required
-                      placeholder={`Enter ${role} access code`}
-                    />
+                    <div className="password-input-wrapper">
+                      <input
+                        type={showAccessCode ? 'text' : 'password'}
+                        className="auth-input"
+                        value={accessCode}
+                        onChange={e => setAccessCode(e.target.value)}
+                        required
+                        placeholder={`Enter ${role} access code`}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowAccessCode(!showAccessCode)}
+                        aria-label={showAccessCode ? 'Hide access code' : 'Show access code'}
+                      >
+                        {showAccessCode ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -279,19 +302,7 @@ const Login = () => {
                 </button>
               </form>
 
-              {import.meta.env.VITE_GOOGLE_CLIENT_ID && (
-                <>
-                  <div style={{ margin: '1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>or</span>
-                    <div style={{ flex: 1, height: 1, background: 'var(--champagne)' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-                    <GoogleLogin onSuccess={handleGoogle} onError={() => {}}
-                      text="signin_with" shape="rectangular" theme="outline" size="large" width="280" />
-                  </div>
-                </>
-              )}
+              {/* Google Sign In hidden for now per user request */}
               <p className="auth-footer">
                 Don't have an account? <Link to="/register">Create an account</Link>
               </p>
@@ -425,26 +436,46 @@ const Login = () => {
 
                 <div className="form-group">
                   <label className="form-label">New Password</label>
-                  <input
-                    type="password"
-                    className="auth-input"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    required
-                    placeholder="At least 6 characters"
-                  />
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      className="auth-input"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      required
+                      placeholder="At least 6 characters"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Confirm New Password</label>
-                  <input
-                    type="password"
-                    className="auth-input"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                    placeholder="Re-enter new password"
-                  />
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      className="auth-input"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      required
+                      placeholder="Re-enter new password"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <button type="submit" className="auth-btn" disabled={loading}>

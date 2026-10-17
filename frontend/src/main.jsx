@@ -12,6 +12,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { HelmetProvider } from 'react-helmet-async';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const ENABLE_GOOGLE_AUTH = false; // Hidden per user request; set true when Google OAuth credentials are ready
 
 const renderApp = () => {
   const content = (
@@ -27,7 +28,7 @@ const renderApp = () => {
     </BrowserRouter>
   );
 
-  return GOOGLE_CLIENT_ID ? (
+  return (ENABLE_GOOGLE_AUTH && GOOGLE_CLIENT_ID) ? (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{content}</GoogleOAuthProvider>
   ) : (
     content

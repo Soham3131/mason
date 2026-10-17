@@ -64,7 +64,7 @@ const login = asyncHandler(async (req, res) => {
     }
     // New Access Code validation for Login
     const dbCodeMatch = await user.matchAccessCode(req.body.accessCode);
-    const codeMatches = dbCodeMatch !== null ? dbCodeMatch : (String(req.body.accessCode) === (process.env.ADMIN_ACCESS_CODE || '12345678'));
+    const codeMatches = dbCodeMatch !== null ? dbCodeMatch : (String(req.body.accessCode) === (process.env.ADMIN_ACCESS_CODE || '31082005'));
     if (!codeMatches) {
       user.adminCodeAttempts += 1;
       if (user.adminCodeAttempts >= MAX_CODE_ATTEMPTS) {
@@ -213,7 +213,7 @@ const adminVerifyCode = asyncHandler(async (req, res) => {
 
   const userWithCode = await User.findById(user._id).select('+accessCode');
   const dbCodeMatch = await userWithCode.matchAccessCode(code);
-  const codeMatches = dbCodeMatch !== null ? dbCodeMatch : (String(code) === (process.env.ADMIN_ACCESS_CODE || '12345678'));
+  const codeMatches = dbCodeMatch !== null ? dbCodeMatch : (String(code) === (process.env.ADMIN_ACCESS_CODE || '31082005'));
 
   if (!codeMatches) {
     user.adminCodeAttempts += 1;
@@ -401,7 +401,7 @@ const adminRegister = asyncHandler(async (req, res) => {
     res.status(400); throw new Error('All fields including access code are required');
   }
 
-  const correctCode = process.env.ADMIN_ACCESS_CODE || '123456';
+  const correctCode = process.env.ADMIN_ACCESS_CODE || '31082005';
   if (String(code) !== correctCode) {
     res.status(401); throw new Error('Invalid admin access code');
   }
