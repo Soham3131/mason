@@ -71,7 +71,7 @@ const orderSchema = new mongoose.Schema(
     razorpayOrderId: { type: String },     // Razorpay order_id (rzp_order_xxx)
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'cancel_requested', 'return_requested', 'return_rejected', 'returned'],
+      enum: ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'refunded', 'cancel_requested', 'return_requested', 'return_rejected', 'returned'],
       default: 'pending',
     },
     trackingUrl: { type: String, default: '' },

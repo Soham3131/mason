@@ -4,7 +4,7 @@ const Razorpay = require('razorpay');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { createNotification } = require('../utils/notificationHelper');
-const { sendOrderConfirmation } = require('../utils/emailService');
+const { sendOrderConfirmation, sendAdminNewOrder } = require('../utils/emailService');
 
 // Initialise Razorpay instance
 const razorpay = new Razorpay({
@@ -103,13 +103,22 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
   const populatedUser = await User.findById(order.user);
   if (populatedUser) {
-    await sendOrderConfirmation({
+    sendOrderConfirmation({
       name: populatedUser.name,
       email: populatedUser.email,
       orderNumber: order.orderNumber,
       totalAmount: order.totalAmount,
       items: order.items
-    });
+    }).catch(err => console.error('[Email sendOrderConfirmation]', err.message));
+
+    sendAdminNewOrder({
+      orderNumber: order.orderNumber,
+      customerName: populatedUser.name,
+      customerEmail: populatedUser.email,
+      totalAmount: order.totalAmount,
+      paymentMethod: order.paymentMethod || 'Razorpay',
+      items: order.items
+    }).catch(err => console.error('[Email sendAdminNewOrder]', err.message));
   }
 
   res.json({ success: true, order });
@@ -154,13 +163,22 @@ const handleWebhook = asyncHandler(async (req, res) => {
 
         const populatedUser = await User.findById(order.user);
         if (populatedUser) {
-          await sendOrderConfirmation({
+          sendOrderConfirmation({
             name: populatedUser.name,
             email: populatedUser.email,
             orderNumber: order.orderNumber,
             totalAmount: order.totalAmount,
             items: order.items
-          });
+          }).catch(err => console.error('[Email sendOrderConfirmation]', err.message));
+
+          sendAdminNewOrder({
+            orderNumber: order.orderNumber,
+            customerName: populatedUser.name,
+            customerEmail: populatedUser.email,
+            totalAmount: order.totalAmount,
+            paymentMethod: order.paymentMethod || 'Razorpay',
+            items: order.items
+          }).catch(err => console.error('[Email sendAdminNewOrder]', err.message));
         }
       }
     }

@@ -1,38 +1,52 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { Search, Check, X, Package, Download, Eye } from 'lucide-react';
+import { Search, Check, X, Package, Download, Eye, Truck, ExternalLink } from 'lucide-react';
 import { generateInvoicePDF } from '../../utils/generateInvoice';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import './admin-pages.css';
 
-/* ── State Machine ─────────────────────────────────────── */
-const ALLOWED_TRANSITIONS = {
-  pending:          ['confirmed', 'cancelled'],
-  confirmed:        ['processing', 'cancelled'],
-  processing:       ['shipped', 'cancelled'],
-  shipped:          ['delivered'],
-  delivered:        [],
-  cancelled:        [],
-  cancel_requested: [],
-  return_requested: [],
-  returned:         [],
-  return_rejected:  [],
-};
+/* ── All operational order statuses admin can switch between freely ── */
+const ALL_ADMIN_STATUSES = [
+  { value: 'pending',          label: 'Pending' },
+  { value: 'confirmed',        label: 'Confirmed' },
+  { value: 'processing',       label: 'Processing' },
+  { value: 'shipped',          label: 'Shipped' },
+  { value: 'out_for_delivery',  label: 'Out for Delivery' },
+  { value: 'delivered',        label: 'Delivered' },
+  { value: 'cancelled',        label: 'Cancelled' },
+  { value: 'refunded',         label: 'Refunded' },
+];
 
 const STATUS_LABELS = {
-  pending: 'Pending', confirmed: 'Confirmed', processing: 'Processing',
-  shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled',
-  cancel_requested: 'Cancel Request', return_requested: 'Return Request',
-  returned: 'Returned', return_rejected: 'Return Rejected',
+  pending:          'Pending',
+  confirmed:        'Confirmed',
+  processing:       'Processing',
+  shipped:          'Shipped',
+  out_for_delivery: 'Out for Delivery',
+  delivered:        'Delivered',
+  cancelled:        'Cancelled',
+  refunded:         'Refunded',
+  cancel_requested: 'Cancel Request',
+  return_requested: 'Return Request',
+  returned:         'Returned',
+  return_rejected:  'Return Rejected',
 };
 
 const STATUS_CLASS = {
-  pending: 'badge-pending', confirmed: 'badge-confirmed', processing: 'badge-processing',
-  shipped: 'badge-shipped', delivered: 'badge-delivered', cancelled: 'badge-cancelled',
-  cancel_requested: 'badge-cancel_requested', return_requested: 'badge-return_requested',
-  returned: 'badge-returned', return_rejected: 'badge-return_rejected',
+  pending:          'badge-pending',
+  confirmed:        'badge-confirmed',
+  processing:       'badge-processing',
+  shipped:          'badge-shipped',
+  out_for_delivery: 'badge-shipped',
+  delivered:        'badge-delivered',
+  cancelled:        'badge-cancelled',
+  refunded:         'badge-delivered',
+  cancel_requested: 'badge-cancel_requested',
+  return_requested: 'badge-return_requested',
+  returned:         'badge-returned',
+  return_rejected:  'badge-return_rejected',
 };
 
 const FILTER_TABS = [
@@ -42,6 +56,7 @@ const FILTER_TABS = [
   { label: 'Processing',     value: 'processing' },
   { label: 'Shipped',        value: 'shipped' },
   { label: 'Delivered',      value: 'delivered' },
+  { label: 'Cancelled',      value: 'cancelled' },
   { label: 'Cancel Req.',    value: 'cancel_requested' },
   { label: 'Return Req.',    value: 'return_requested' },
 ];
@@ -69,6 +84,151 @@ const returnBadgeClass = {
   approved:  'badge-delivered',
   rejected:  'badge-cancelled',
   completed: 'badge-returned',
+};
+
+/* ── Tracking Modal ─────────────────────────────────────── */
+const TrackingModal = ({ order, onConfirm, onClose }) => {
+  const [url, setUrl] = useState(order.trackingUrl || '');
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15, 23, 42, 0.6)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '1rem',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'white',
+          borderRadius: '14px',
+          width: '100%',
+          maxWidth: '480px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            padding: '1.25rem 1.5rem',
+            borderBottom: '1px solid #f1f5f9',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Truck size={18} color="#C08A74" />
+              Courier Tracking Link
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+              Order #{order.orderNumber?.replace('ORD-', '') || order._id.slice(-6).toUpperCase()} · {order.user?.name || 'Customer'}
+            </span>
+          </div>
+          <button onClick={onClose} className="btn-icon-sm">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ padding: '1.5rem' }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: '#374151',
+              marginBottom: '0.5rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Tracking URL
+          </label>
+          <input
+            type="url"
+            className="form-input"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="e.g. https://shiprocket.co/tracking/... or bluedart.com/..."
+            style={{ width: '100%', marginBottom: '0.75rem' }}
+            autoFocus
+          />
+          <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: 1.5 }}>
+            Customers will see a live <strong>Track Live Status</strong> button on their order details page with this link.
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '1rem 1.5rem',
+            background: '#f8fafc',
+            borderTop: '1px solid #f1f5f9',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '0.75rem',
+          }}
+        >
+          {order.trackingUrl && (
+            <button
+              type="button"
+              onClick={() => onConfirm('')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: '1px solid #fecaca',
+                background: '#fef2f2',
+                color: '#dc2626',
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              Remove Link
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '0.5rem 1rem',
+              border: '1px solid #cbd5e1',
+              background: 'white',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(url)}
+            style={{
+              padding: '0.5rem 1.25rem',
+              background: '#0f172a',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            Save Tracking Link
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 /* ── Note Modal ────────────────────────────────────────── */
@@ -201,8 +361,9 @@ const OrdersManagement = () => {
   const [filter, setFilter]       = useState(initialFilter);
   const [search, setSearch]       = useState('');
   const [expandedId, setExpandedId] = useState(null);
-  const [noteModal, setNoteModal]     = useState(null); // { title, onConfirm }
-  const [cancelModal, setCancelModal] = useState(null); // order object
+  const [noteModal, setNoteModal]         = useState(null); // { title, onConfirm }
+  const [cancelModal, setCancelModal]     = useState(null); // order object
+  const [trackingModal, setTrackingModal] = useState(null); // order object
 
   // Date selectors states
   const [filterYear, setFilterYear] = useState('');
@@ -274,38 +435,60 @@ const OrdersManagement = () => {
   /* ── Actions ── */
   const promptNote = (title, onConfirm) => setNoteModal({ title, onConfirm });
 
-  const updateStatus = (orderId, currentStatus, newStatus) => {
+  const updateStatus = async (orderId, currentStatus, newStatus) => {
     if (newStatus === currentStatus) return;
-    const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
-    if (!allowed.includes(newStatus)) {
-      toast.error(`Cannot change "${currentStatus}" → "${newStatus}"`);
-      return;
+
+    // Instant optimistic update so admin sees immediate UI feedback
+    setOrders(prev =>
+      prev.map(o => {
+        if (o._id !== orderId) return o;
+        return {
+          ...o,
+          status: newStatus,
+          paymentStatus: newStatus === 'delivered' ? 'paid' : (newStatus === 'refunded' ? 'refunded' : o.paymentStatus),
+        };
+      })
+    );
+
+    try {
+      await api.put(`/orders/${orderId}/status`, {
+        status: newStatus,
+        note: `Status updated to ${STATUS_LABELS[newStatus] || newStatus} by admin`,
+      });
+      toast.success(`Order updated to ${STATUS_LABELS[newStatus] || newStatus}`);
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update status');
+      fetchOrders();
     }
-    promptNote(`Update to "${STATUS_LABELS[newStatus]}"`, async (note) => {
-      setNoteModal(null);
-      try {
-        await api.put(`/orders/${orderId}/status`, { status: newStatus, note: note || `Order is now ${newStatus}` });
-        toast.success('Status updated');
-        fetchOrders();
-      } catch (err) {
-        toast.error(err.response?.data?.message || 'Failed to update');
-      }
-    });
   };
 
   const handleUpdateTracking = async (orderId, url) => {
-    if (url && !/^(https?:\/\/)/i.test(url)) {
-      toast.error('Invalid URL. Must start with http:// or https://');
-      fetchOrders();
-      return;
+    let cleanUrl = url ? url.trim() : '';
+    if (cleanUrl && !/^(https?:\/\/)/i.test(cleanUrl)) {
+      cleanUrl = `https://${cleanUrl}`;
     }
 
+    // Optimistic UI update
+    setOrders(prev =>
+      prev.map(o => {
+        if (o._id !== orderId) return o;
+        const willShip = cleanUrl && ['pending', 'processing', 'confirmed'].includes(o.status);
+        return {
+          ...o,
+          trackingUrl: cleanUrl,
+          status: willShip ? 'shipped' : o.status,
+        };
+      })
+    );
+
     try {
-      await api.put(`/orders/${orderId}/tracking`, { trackingUrl: url });
-      toast.success('Tracking URL updated');
+      await api.put(`/orders/${orderId}/tracking`, { trackingUrl: cleanUrl });
+      toast.success(cleanUrl ? 'Tracking link saved!' : 'Tracking link removed');
       fetchOrders();
     } catch (err) {
-      toast.error('Failed to update tracking');
+      toast.error(err.response?.data?.message || 'Failed to update tracking');
+      fetchOrders();
     }
   };
 
@@ -518,8 +701,6 @@ const OrdersManagement = () => {
               ) : (
                 displayed.map((order, idx) => {
                   const isExpanded = expandedId === order._id;
-                  const allowed = ALLOWED_TRANSITIONS[order.status] || [];
-                  const isTerminal = allowed.length === 0;
 
                   return [
                     /* Main Row */
@@ -565,49 +746,75 @@ const OrdersManagement = () => {
                         </span>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          {/* 1. Add view option in Action column (eye icon) to toggle expansion */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' }}>
+                          {/* 1. View / Expand button */}
                           <button
                             className="btn-icon-sm view"
                             onClick={() => setExpandedId(isExpanded ? null : order._id)}
                             title={isExpanded ? 'Collapse details' : 'View details'}
                             style={{
-                              background: isExpanded ? '#f0fdf4' : 'transparent',
-                              borderColor: isExpanded ? '#bbf7d0' : 'transparent',
+                              background: isExpanded ? '#f0fdf4' : '#f8fafc',
+                              borderColor: isExpanded ? '#bbf7d0' : '#e2e8f0',
                               color: isExpanded ? '#16a34a' : '#64748b',
                               width: '32px',
                               height: '32px',
-                              borderRadius: '6px'
+                              borderRadius: '6px',
+                              flexShrink: 0,
                             }}
                           >
                             <Eye size={15} />
                           </button>
 
+                          {/* 2. Quick Tracking Button */}
+                          <button
+                            onClick={() => setTrackingModal(order)}
+                            title={order.trackingUrl ? `Tracking URL: ${order.trackingUrl}` : 'Add Tracking Link'}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                              height: '32px',
+                              padding: '0 8px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 650,
+                              border: order.trackingUrl ? '1px solid #fed7aa' : '1px solid #e2e8f0',
+                              background: order.trackingUrl ? '#fff7ed' : '#ffffff',
+                              color: order.trackingUrl ? '#c2410c' : '#64748b',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Truck size={14} color={order.trackingUrl ? '#ea580c' : '#64748b'} />
+                            {order.trackingUrl ? 'Track Link' : '+ Track'}
+                          </button>
+
+                          {/* 3. Status Action / Dropdown */}
                           {order.status === 'cancel_requested' ? (
                             <button
                               onClick={() => setCancelModal(order)}
-                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.85rem', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
+                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.75rem', height:'32px', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink: 0 }}
                             >
-                              View &amp; Act
+                              Cancel Req.
                             </button>
                           ) : order.status === 'return_requested' ? (
                             <button
                               onClick={() => setExpandedId(isExpanded ? null : order._id)}
-                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.85rem', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
+                              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.75rem', height:'32px', background:'#f97316', color:'white', border:'none', borderRadius:'6px', fontSize:'0.72rem', fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink: 0 }}
                             >
-                              Review
+                              Return Req.
                             </button>
-                          ) : isTerminal ? (
-                            <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>—</span>
                           ) : (
                             <select
                               className="status-select"
                               value={order.status}
                               onChange={e => updateStatus(order._id, order.status, e.target.value)}
+                              style={{ height: '32px', fontSize: '0.76rem', fontWeight: 600, padding: '0 1.5rem 0 0.55rem', minWidth: '105px' }}
                             >
-                              <option value={order.status}>{STATUS_LABELS[order.status]}</option>
-                              {allowed.map(s => (
-                                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                              {ALL_ADMIN_STATUSES.map(s => (
+                                <option key={s.value} value={s.value}>{s.label}</option>
                               ))}
                             </select>
                           )}
@@ -728,23 +935,45 @@ const OrdersManagement = () => {
 
                               {/* Tracking URL */}
                               <div style={{ marginBottom: '1.25rem', padding: '1rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                                <p className="order-detail-section-title" style={{ margin: '0 0 0.5rem 0' }}>Tracking Link</p>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                  <p className="order-detail-section-title" style={{ margin: 0 }}>Courier Tracking Link</p>
+                                  {order.trackingUrl && (
+                                    <a
+                                      href={order.trackingUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{ fontSize: '0.75rem', color: '#C08A74', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontWeight: 650 }}
+                                    >
+                                      Test Link <ExternalLink size={12} />
+                                    </a>
+                                  )}
+                                </div>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                   <input 
                                     type="url" 
                                     placeholder="Paste courier tracking URL..." 
                                     defaultValue={order.trackingUrl || ''}
-                                    onBlur={(e) => {
-                                      if(e.target.value !== order.trackingUrl) {
-                                         handleUpdateTracking(order._id, e.target.value);
-                                      }
-                                    }}
+                                    id={`tracking-input-${order._id}`}
                                     style={{ flex: 1, padding: '0.5rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', outline: 'none' }}
                                   />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const input = document.getElementById(`tracking-input-${order._id}`);
+                                      if (input) handleUpdateTracking(order._id, input.value);
+                                    }}
+                                    style={{ padding: '0.5rem 1rem', background: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                  >
+                                    Save Link
+                                  </button>
                                 </div>
-                                {order.trackingUrl && (
+                                {order.trackingUrl ? (
                                   <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
-                                    ✓ Customers can now track this order.
+                                    ✓ Active: Customers can now track this order live from their account.
+                                  </p>
+                                ) : (
+                                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: '#64748b' }}>
+                                    No tracking link added. Enter URL above or click &quot;+ Track&quot; in the table row.
                                   </p>
                                 )}
                               </div>
@@ -1072,6 +1301,19 @@ const OrdersManagement = () => {
             handleCancellation(cancelModal._id, 'reject', note);
           }}
           onClose={() => setCancelModal(null)}
+        />,
+        document.body
+      )}
+
+      {/* Tracking Modal */}
+      {trackingModal && createPortal(
+        <TrackingModal
+          order={trackingModal}
+          onConfirm={(url) => {
+            handleUpdateTracking(trackingModal._id, url);
+            setTrackingModal(null);
+          }}
+          onClose={() => setTrackingModal(null)}
         />,
         document.body
       )}

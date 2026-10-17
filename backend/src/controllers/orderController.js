@@ -7,6 +7,7 @@ const User = require('../models/User');
 const { createNotification } = require('../utils/notificationHelper');
 const {
   sendOrderConfirmation, sendOrderShipped, sendOrderOutForDelivery, sendOrderDelivered,
+  sendOrderCancelled, sendAdminOrderCancelled,
   sendReturnRequest, sendReturnApproved, sendRefundProcessed,
   sendAdminNewOrder, sendAdminReturnRequest, sendAdminCancellationRequest,
 } = require('../utils/emailService');
@@ -275,20 +276,12 @@ const getAllOrders = asyncHandler(async (req, res) => {
   res.json({ success: true, total, orders });
 });
 
-// Valid forward-only status transitions for admin general status update
-const ALLOWED_TRANSITIONS = {
-  pending:          ['confirmed', 'cancelled'],
-  confirmed:        ['processing', 'cancelled'],
-  processing:       ['shipped', 'cancelled'],
-  shipped:          ['delivered'],
-  // Terminal / managed-by-dedicated-endpoints — no free changes allowed:
-  delivered:        [],
-  cancelled:        [],
-  cancel_requested: [],   // managed by /cancel-handle
-  return_requested: [],   // managed by /return-item-handle
-  returned:         [],
-  return_rejected:  [],
-};
+// Allowed valid statuses for orders
+const VALID_ORDER_STATUSES = [
+  'pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery',
+  'delivered', 'cancelled', 'refunded', 'cancel_requested', 'return_requested',
+  'returned', 'return_rejected'
+];
 
 // @PUT /api/v1/orders/:id/status (admin)
 const updateOrderStatus = asyncHandler(async (req, res) => {
@@ -296,22 +289,38 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) { res.status(404); throw new Error('Order not found'); }
 
-  const allowed = ALLOWED_TRANSITIONS[order.status] || [];
-  if (!allowed.includes(status)) {
+  if (!status || !VALID_ORDER_STATUSES.includes(status)) {
     res.status(400);
-    throw new Error(
-      `Cannot transition order from "${order.status}" to "${status}". ` +
-      (allowed.length
-        ? `Allowed next statuses: ${allowed.join(', ')}.`
-        : `Order is in a terminal or managed state and cannot be changed here.`)
-    );
+    throw new Error(`Invalid status "${status}". Allowed statuses: ${VALID_ORDER_STATUSES.join(', ')}`);
+  }
+
+  const prevStatus = order.status;
+  if (prevStatus === status) {
+    return res.json({ success: true, order });
   }
 
   order.status = status;
-  order.statusHistory.push({ status, note });
-  if (status === 'delivered') order.paymentStatus = 'paid';
-  
-  if (status === 'cancelled') {
+  order.statusHistory.push({
+    status,
+    note: note || `Status changed from ${prevStatus} to ${status}`
+  });
+
+  // If marked delivered, COD / unpaid orders become paid
+  if (status === 'delivered') {
+    order.paymentStatus = 'paid';
+  }
+
+  // If marked refunded, update paymentStatus to refunded
+  if (status === 'refunded') {
+    order.paymentStatus = 'refunded';
+  }
+
+  // Stock inventory adjustments:
+  const isNowCancelledOrRefunded = ['cancelled', 'refunded'].includes(status);
+  const wasCancelledOrRefunded = ['cancelled', 'refunded'].includes(prevStatus);
+
+  if (isNowCancelledOrRefunded && !wasCancelledOrRefunded) {
+    // Restore stock
     await Promise.all(
       order.items.map(async (item) => {
         await Product.updateOne(
@@ -320,27 +329,84 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         );
       })
     );
+  } else if (!isNowCancelledOrRefunded && wasCancelledOrRefunded) {
+    // Deduct stock again when re-activating an order
+    await Promise.all(
+      order.items.map(async (item) => {
+        await Product.updateOne(
+          { _id: item.product, variants: { $elemMatch: { size: item.variantSize, color: item.variantColor } } },
+          { $inc: { 'variants.$.stock': -item.quantity } }
+        );
+      })
+    );
   }
 
   await order.save();
 
-  // Send Notification
-  await createNotification({
+  // Send In-app Notification to customer
+  createNotification({
     user: order.user,
     title: `Order Status Updated: ${status.charAt(0).toUpperCase() + status.slice(1)}`,
     message: `Your order #${order.orderNumber} is now ${status}. ${note || ''}`,
     link: `/orders/${order._id}`
-  });
+  }).catch(() => {});
 
-  // Send Email
+  // Send Email notifications
   const populatedUser = await User.findById(order.user);
   if (populatedUser) {
-    if (status === 'shipped') {
-      await sendOrderShipped({ name: populatedUser.name, email: populatedUser.email, orderNumber: order.orderNumber, trackingUrl: order.trackingUrl });
+    if (status === 'confirmed') {
+      sendOrderConfirmation({
+        name: populatedUser.name,
+        email: populatedUser.email,
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount,
+        items: order.items,
+      }).catch(err => console.error('[Email Error sendOrderConfirmation]', err.message));
+
+      sendAdminNewOrder({
+        orderNumber: order.orderNumber,
+        customerName: populatedUser.name,
+        customerEmail: populatedUser.email,
+        totalAmount: order.totalAmount,
+        paymentMethod: order.paymentMethod,
+        items: order.items,
+      }).catch(err => console.error('[Email Error sendAdminNewOrder]', err.message));
+    } else if (status === 'shipped') {
+      sendOrderShipped({
+        name: populatedUser.name,
+        email: populatedUser.email,
+        orderNumber: order.orderNumber,
+        trackingUrl: order.trackingUrl
+      }).catch(err => console.error('[Email Error sendOrderShipped]', err.message));
     } else if (status === 'out_for_delivery') {
-      await sendOrderOutForDelivery({ name: populatedUser.name, email: populatedUser.email, orderNumber: order.orderNumber });
+      sendOrderOutForDelivery({
+        name: populatedUser.name,
+        email: populatedUser.email,
+        orderNumber: order.orderNumber
+      }).catch(err => console.error('[Email Error sendOrderOutForDelivery]', err.message));
     } else if (status === 'delivered') {
-      await sendOrderDelivered({ name: populatedUser.name, email: populatedUser.email, orderNumber: order.orderNumber });
+      sendOrderDelivered({
+        name: populatedUser.name,
+        email: populatedUser.email,
+        orderNumber: order.orderNumber
+      }).catch(err => console.error('[Email Error sendOrderDelivered]', err.message));
+    } else if (status === 'cancelled') {
+      sendOrderCancelled({
+        name: populatedUser.name,
+        email: populatedUser.email,
+        orderNumber: order.orderNumber,
+        reason: note || 'Cancelled by store admin',
+        totalAmount: order.totalAmount,
+        refundNotice: order.paymentStatus === 'paid' ? 'If you have paid for this order, your refund is being processed.' : ''
+      }).catch(err => console.error('[Email Error sendOrderCancelled]', err.message));
+
+      sendAdminOrderCancelled({
+        orderNumber: order.orderNumber,
+        customerName: populatedUser.name,
+        customerEmail: populatedUser.email,
+        totalAmount: order.totalAmount,
+        reason: note || 'Cancelled by admin'
+      }).catch(err => console.error('[Email Error sendAdminOrderCancelled]', err.message));
     }
   }
 
@@ -349,10 +415,14 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
 // @PUT /api/v1/orders/:id/tracking (admin/vendor)
 const updateTrackingUrl = asyncHandler(async (req, res) => {
-  const { trackingUrl } = req.body;
+  let { trackingUrl } = req.body;
 
   if (trackingUrl && !/^(https?:\/\/)/i.test(trackingUrl)) {
-    res.status(400); throw new Error('Invalid tracking URL. Must start with http:// or https://');
+    trackingUrl = `https://${trackingUrl.trim()}`;
+  } else if (trackingUrl) {
+    trackingUrl = trackingUrl.trim();
+  } else {
+    trackingUrl = '';
   }
 
   const order = await Order.findById(req.params.id).populate('user', 'name email');
@@ -712,16 +782,38 @@ const handleCancellationRequest = asyncHandler(async (req, res) => {
   order.cancellationRequest.adminNote = adminNote;
   await order.save();
 
-  // Send Notification
+  // Send Notification & Emails
   const isApproved = action === 'approve';
-  await createNotification({
+  createNotification({
     user: order.user,
     title: `Cancellation ${isApproved ? 'Approved — Refund Initiated' : 'Request Rejected'}`,
     message: isApproved
       ? `Your order #${order.orderNumber} has been cancelled. A refund of ₹${order.totalAmount} has been initiated and will reflect within 5–7 business days. ${adminNote || ''}`
       : `Your cancellation request for order #${order.orderNumber} was rejected. ${adminNote || ''}`,
     link: `/orders/${order._id}`,
-  });
+  }).catch(() => {});
+
+  if (isApproved) {
+    const cancelUser = await User.findById(order.user).select('name email');
+    if (cancelUser) {
+      sendOrderCancelled({
+        name: cancelUser.name,
+        email: cancelUser.email,
+        orderNumber: order.orderNumber,
+        reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin',
+        totalAmount: order.totalAmount,
+        refundNotice: order.paymentStatus === 'refunded' ? `A refund of ₹${order.totalAmount} has been initiated.` : ''
+      }).catch(err => console.error('[Email sendOrderCancelled]', err.message));
+
+      sendAdminOrderCancelled({
+        orderNumber: order.orderNumber,
+        customerName: cancelUser.name,
+        customerEmail: cancelUser.email,
+        totalAmount: order.totalAmount,
+        reason: adminNote || order.cancellationRequest?.reason || 'Cancellation approved by admin'
+      }).catch(err => console.error('[Email sendAdminOrderCancelled]', err.message));
+    }
+  }
 
   res.json({ success: true, order });
 });

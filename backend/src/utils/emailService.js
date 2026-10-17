@@ -3,48 +3,60 @@ const EmailLog = require('../models/EmailLog');
 
 /* All admin alert / notification emails go to these addresses */
 const adminTo = () =>
-  (process.env.ADMIN_NOTIFY_EMAILS || 'Contact@owlstitch.com')
+  (process.env.ADMIN_NOTIFY_EMAILS || '100numalik@gmail.com, Contact@owlstitch.com')
     .split(',')
     .map(e => e.trim())
     .join(', ');
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 465,
-    secure: process.env.SMTP_SECURE !== 'false',
+const createTransporter = () => {
+  const port = Number(process.env.SMTP_PORT) || 465;
+  const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+    port: port,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    tls: {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2',
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
   });
+};
 
 /* ── Generic send ──────────────────────────────────── */
 const sendEmail = async ({ to, subject, html }) => {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('[Email] SMTP_USER or SMTP_PASS not set — skipping email send');
+    console.warn('[Email] SMTP_USER or SMTP_PASS not set in environment — skipping email send');
     return;
   }
   try {
     const transporter = createTransporter();
+    const fromAddress = process.env.SMTP_USER.trim();
     await transporter.sendMail({
-      from: `"Owl Stitch by Mason" <${process.env.SMTP_USER}>`,
+      from: `"Owl Stitch by Mason" <${fromAddress}>`,
       to,
       subject,
       html,
     });
-    console.log(`[Email] Sent to ${to}: ${subject}`);
+    console.log(`[Email] Successfully sent to ${to}: "${subject}"`);
     try {
       await EmailLog.create({ to, subject, body: html, status: 'sent' });
     } catch (logErr) {
-      console.error('[Email Log Error]', logErr);
+      console.error('[Email Log Error]', logErr.message);
     }
   } catch (err) {
-    console.error('[Email] Send failed:', err.message);
+    console.error(`[Email Error] Failed to send to ${to} ("${subject}"):`, err.message);
     try {
       await EmailLog.create({ to, subject, body: html, status: 'failed', error: err.message });
     } catch (logErr) {
-      console.error('[Email Log Error]', logErr);
+      console.error('[Email Log Error]', logErr.message);
     }
   }
 };
@@ -335,6 +347,40 @@ const sendPasswordResetOtp = async ({ email, name, otp }) => {
   });
 };
 
+/* ── Order Cancelled (Customer) ─────────────────────── */
+const sendOrderCancelled = async ({ name, email, orderNumber, reason, totalAmount, refundNotice }) => {
+  await sendEmail({
+    to: email,
+    subject: `Order Cancelled — #${orderNumber}`,
+    html: wrap(`
+      <h2 style="color:#dc2626;margin:0 0 8px;">Order Cancelled 🚫</h2>
+      <p style="color:#374151;line-height:1.6;margin:0 0 16px;">Hi ${name || 'Customer'}, your order <strong>#${orderNumber}</strong> has been cancelled.</p>
+      ${reason ? `<div style="background:#fef2f2;border-left:3px solid #dc2626;padding:10px 14px;border-radius:4px;margin-bottom:16px;font-size:0.85rem;color:#991b1b;"><strong>Reason:</strong> ${reason}</div>` : ''}
+      ${totalAmount ? `<p style="color:#6b7280;margin:0 0 12px;font-size:0.85rem;">Order Total: <strong>₹${Number(totalAmount).toLocaleString('en-IN')}</strong></p>` : ''}
+      ${refundNotice ? `<div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:10px 14px;border-radius:4px;font-size:0.85rem;color:#166534;">${refundNotice}</div>` : ''}
+      <p style="margin:20px 0 0;font-size:0.82rem;color:#9ca3af;">If you have any questions or this was unexpected, please contact us at support@owlstitch.com.</p>`),
+  });
+};
+
+/* ── Order Cancelled (Admin Alert) ─────────────────── */
+const sendAdminOrderCancelled = async ({ orderNumber, customerName, customerEmail, totalAmount, reason }) => {
+  await sendEmail({
+    to: adminTo(),
+    subject: `🚫 Order Cancelled — #${orderNumber}`,
+    html: adminWrap(`
+      <p style="margin:0 0 18px;font-size:1rem;color:#dc2626;font-weight:700;">Order #${orderNumber} Cancelled</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
+        ${row('Order #', orderNumber)}
+        ${row('Customer', `${customerName || 'Customer'} &lt;${customerEmail || '—'}&gt;`)}
+        ${row('Total', `₹${Number(totalAmount || 0).toLocaleString('en-IN')}`)}
+        ${row('Reason', reason || 'Cancelled by store')}
+      </table>
+      <div style="margin-top:4px;padding:12px 16px;background:#fef2f2;border-radius:6px;border-left:3px solid #dc2626;">
+        <p style="margin:0;font-size:0.83rem;color:#991b1b;">Inventory for the items has been automatically updated.</p>
+      </div>`),
+  });
+};
+
 module.exports = {
   sendEmail,
   sendAccountLockoutAlert,
@@ -346,6 +392,8 @@ module.exports = {
   sendOrderShipped,
   sendOrderOutForDelivery,
   sendOrderDelivered,
+  sendOrderCancelled,
+  sendAdminOrderCancelled,
   sendReturnRequest,
   sendReturnApproved,
   sendRefundProcessed,
